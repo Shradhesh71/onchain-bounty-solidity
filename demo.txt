@@ -1,0 +1,106 @@
+PS D:\codoc\onchain-bounty-board> npx hardhat run scripts/deploy.js --network sepolia
+Deploying contracts with: 0x9f582979470b73C72F2EA7465F0A3c17Fc582D9f
+BountyNFT deployed at: 0x83361a50558123Fbbe033E8E079e954A4614bA7d
+BountyAgent deployed at: 0xA5A57A5c5D4cbBdD7C8582cE6E25D6b34702b14A
+NFT ownership transferred to BountyAgent.
+PS D:\codoc\onchain-bounty-board>
+
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.22;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "./BountyNFT.sol";
+
+contract BountyAgent is Ownable {
+    struct Bounty {
+        address creator;
+        uint256 prize;
+        uint256 entryFee;
+        uint32  maxWinners;
+        uint256 deadline;
+        bool    settled;
+    }
+
+    struct Submission {
+        address contributor;
+        string cid;
+    }
+
+    uint256 public bountyCount;
+    mapping(uint256 => Bounty) public bounties;
+    mapping(uint256 => Submission[]) public submissions;
+    BountyNFT public nftContract;
+    uint256 public platformFeeBps = 500; // 5%
+
+    constructor(address _nftAddress) Ownable(msg.sender)  {
+        nftContract = BountyNFT(_nftAddress);
+    }
+
+    function createBounty(
+        uint256 _entryFee,
+        uint32  _maxWinners,
+        uint256 _deadline
+    ) external payable {
+        require(msg.value > 0, "Prize must be > 0");
+        require(_deadline > block.timestamp, "Deadline must be future");
+
+        bountyCount++;
+        bounties[bountyCount] = Bounty(
+            msg.sender,
+            msg.value,
+            _entryFee,
+            _maxWinners,
+            _deadline,
+            false
+        );
+
+        emit BountyCreated(bountyCount, msg.sender, msg.value);
+    }
+
+    function submitWork(uint256 _bountyId, string calldata _cid) external payable {
+        Bounty storage b = bounties[_bountyId];
+        require(block.timestamp < b.deadline, "Deadline passed");
+        require(msg.value == b.entryFee, "Incorrect entry fee");
+        submissions[_bountyId].push(Submission({
+            contributor: msg.sender,
+            cid: _cid
+        }));
+
+        emit SubmissionPaid(_bountyId, msg.sender, _cid);
+    }
+
+    function distributePrizes(uint256 _bountyId, uint256[] calldata winnerIndexes) external {
+        Bounty storage b = bounties[_bountyId];
+        require(msg.sender == b.creator, "Only creator");
+        require(block.timestamp >= b.deadline, "Too early");
+        require(!b.settled, "Already settled");
+        require(winnerIndexes.length > 0 && winnerIndexes.length <= b.maxWinners, "Invalid winners");
+
+        uint256 totalPrize = b.prize;
+        uint256 fee = (totalPrize * platformFeeBps) / 10000;
+        uint256 payoutPerWinner = (totalPrize - fee) / winnerIndexes.length;
+
+        // send platform fee
+        payable(owner()).transfer(fee);
+
+        // mint NFTs and pay winners
+        for (uint i = 0; i < winnerIndexes.length; i++) {
+            
+            Submission memory s = submissions[_bountyId][winnerIndexes[i]];
+            address winner = s.contributor;
+            string memory cid = s.cid;
+
+            payable(winner).transfer(payoutPerWinner);
+            nftContract.mint(winner, cid);
+        }
+
+        b.settled = true;
+        emit PrizesDistributed(_bountyId, winnerIndexes);
+    }
+
+    event BountyCreated(uint256 indexed id, address creator, uint256 prize);
+    event SubmissionPaid(uint256 indexed id, address contributor, string cid);
+    event PrizesDistributed(uint256 indexed id, uint256[] winnerIndexes);
+}

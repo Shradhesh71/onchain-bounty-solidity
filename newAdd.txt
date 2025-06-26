@@ -1,0 +1,7 @@
+PS D:\codoc\onchain-bounty-board> npx hardhat run scripts/deploy.js --network sepolia
+Deploying contracts with: 0x9f582979470b73C72F2EA7465F0A3c17Fc582D9f
+Using USDC at: 0x9f582979470b73C72F2EA7465F0A3c17Fc582D9f
+BountyNFT deployed at: 0x1C72617a11e93591e51700a0B4DFD23cdABFEFce
+BountyAgent deployed at: 0xCb3A52d8Aa05037F71d02b057Cfa3e945f9B6ddc
+NFT ownership transferred to BountyAgent.
+PS D:\codoc\onchain-bounty-board> 
